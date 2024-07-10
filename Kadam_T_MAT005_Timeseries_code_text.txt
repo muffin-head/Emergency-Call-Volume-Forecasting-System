@@ -1,0 +1,843 @@
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+from datetime import datetime, timedelta
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error
+from statsmodels.tsa.arima.model import ARIMA
+from sklearn.metrics import mean_squared_error
+from statsmodels.tsa.stattools import pacf
+from statsmodels.graphics.tsaplots import plot_pacf
+from statsmodels.tsa.stattools import acf
+from statsmodels.graphics.tsaplots import plot_acf
+from statsmodels.tsa.api import ExponentialSmoothing
+from statsmodels.tsa.api import Holt
+from sklearn.metrics import mean_squared_error
+from statsmodels.tsa.seasonal import seasonal_decompose
+from statsmodels.tsa.stattools import adfuller, kpss
+from matplotlib import pyplot as plt
+from statsmodels.tsa.seasonal import STL
+from statsmodels.tsa.api import ExponentialSmoothing
+from sklearn.metrics import mean_squared_error
+from statsmodels.tsa.api import ExponentialSmoothing
+import numpy as np
+from pandas.plotting import register_matplotlib_converters
+register_matplotlib_converters()
+from time import time
+import pandas as pd
+
+
+data_path = '/content/coursework_data.csv'
+data = pd.read_csv(data_path)
+
+data['Call_Date'] = pd.to_datetime(data['Call_Date'], dayfirst=True)
+data.head()
+
+data['Hour'] = data['Call_Date'].dt.hour
+
+def part_of_day(hour):
+    if 5 <= hour < 12:
+        return 'Morning'
+    elif 12 <= hour < 17:
+        return 'Afternoon'
+    elif 17 <= hour < 21:
+        return 'Evening'
+    else:
+        return 'Night'
+
+data['Part_of_Day'] = data['Hour'].apply(part_of_day)
+
+
+data.groupby('Part_of_Day').size().plot(kind='barh', color=sns.palettes.mpl_palette('Dark2'))
+plt.gca().spines[['top', 'right',]].set_visible(False)
+
+from matplotlib import pyplot as plt
+
+frequency, bins = np.histogram(data['Hour'], bins=24, range=(0,24))
+
+plt.style.use('dark_background')
+
+plt.figure(figsize=(12, 6))
+plt.bar(bins[:-1], frequency, width=0.8, color='#5998ff') 
+plt.title('Activity Frequency by Hour', color='white', fontsize=18)
+plt.xlabel('Hour', color='white', fontsize=14)
+plt.ylabel('Frequency', color='white', fontsize=14)
+plt.xticks(ticks=np.arange(0, 24), labels=np.arange(1, 25), color='white')  # Set ticks to be at the center of the bars
+plt.yticks(color='white')
+plt.grid(color='gray', linestyle='--', linewidth=0.5)
+
+plt.gca().spines['top'].set_visible(False)
+plt.gca().spines['right'].set_visible(False)
+plt.show()
+
+data.set_index('Call_Date', inplace=True)
+daily_data = data.resample('D').size()
+daily_data = pd.DataFrame({'Call_Volume': daily_data})
+
+
+plt.style.use('dark_background')
+start_date = datetime(2019, 3, 1)
+end_date = datetime(2019, 9, 30)
+daily_data = daily_data[start_date:end_date]
+plt.figure(figsize=(10, 4))
+plt.plot(daily_data,color='cyan')
+
+current_date = start_date
+while current_date <= end_date:
+    plt.axvline(current_date, color='k', linestyle='--', alpha=0.2)
+    current_date += timedelta(weeks=1)  # Increment the date by one week
+
+plt.show()
+
+stl = STL(daily_data)
+result = stl.fit()
+seasonal, trend, resid = result.seasonal, result.trend, result.resid
+
+plt.figure(figsize=(8,6))
+
+plt.subplot(4,1,1)
+plt.plot(daily_data)
+plt.title('Original Series', fontsize=16)
+
+plt.subplot(4,1,2)
+plt.plot(trend)
+plt.title('Trend', fontsize=16)
+
+plt.subplot(4,1,3)
+plt.plot(seasonal)
+plt.title('Seasonal', fontsize=16)
+
+plt.subplot(4,1,4)
+plt.plot(resid)
+plt.title('Residual', fontsize=16)
+
+plt.tight_layout()
+
+estimated = trend + seasonal
+plt.figure(figsize=(12,4))
+plt.plot(daily_data)
+plt.plot(estimated)
+
+residual_mean = resid.mean()
+residual_std = resid.std()
+lower = residual_mean - 3*residual_std
+upper = residual_mean + 3*residual_std
+
+plt.figure(figsize=(10,4))
+plt.plot(resid)
+
+plt.fill_between([datetime(2019,3,1), datetime(2019,9,30)], lower, upper, color='y', alpha=0.25, linestyle='--', linewidth=2)
+plt.xlim(datetime(2019,3,1),  datetime(2019,10,1))
+
+anomalies = daily_data[(resid < lower) | (resid > upper)]
+
+plt.figure(figsize=(10,4))
+plt.plot(daily_data)
+current_date = start_date
+while current_date <= end_date:
+    plt.axvline(current_date, color='k', linestyle='--', alpha=0.2)
+    current_date += timedelta(weeks=1)
+plt.scatter(anomalies.index, anomalies.Call_Volume, color='r', marker='D')
+
+anomalies
+
+daily_data.to_csv('temp.csv',sep=',')
+
+
+anomalies = ['2019-05-22', '2019-06-05']
+
+adjusted_data = daily_data.copy()
+
+for anomaly_date in anomalies:
+    anomaly_datetime = pd.to_datetime(anomaly_date)
+    anomaly_weekday = anomaly_datetime.weekday()
+    mean_for_weekday = adjusted_data[(adjusted_data.index.weekday == anomaly_weekday) & (~adjusted_data.index.isin(pd.to_datetime(anomalies)))].mean()
+    # Replace the anomaly value with the calculated mean
+    adjusted_data.loc[anomaly_datetime] = mean_for_weekday
+
+
+stl = STL(adjusted_data['Call_Volume'])
+result = stl.fit()
+seasonal, trend, resid = result.seasonal, result.trend, result.resid
+plt.figure(figsize=(8,6))
+
+plt.subplot(4,1,1)
+plt.plot(adjusted_data)
+plt.title('Original Series', fontsize=16)
+
+plt.subplot(4,1,2)
+plt.plot(trend)
+plt.title('Trend', fontsize=16)
+
+plt.subplot(4,1,3)
+plt.plot(seasonal)
+plt.title('Seasonal', fontsize=16)
+
+plt.subplot(4,1,4)
+plt.plot(resid)
+plt.title('Residual', fontsize=16)
+
+plt.tight_layout()
+
+plt.figure(figsize=(10,4))
+plt.plot(adjusted_data)
+plt.ylabel('calls', fontsize=16)
+current_date = start_date
+while current_date <= end_date:
+    plt.axvline(current_date, color='k', linestyle='--', alpha=0.2)
+    current_date += timedelta(weeks=1)
+plt.show()
+
+
+
+
+
+adjusted_data['Day_of_Week'] = adjusted_data.index.dayofweek
+
+adjusted_data['Is_Weekend'] = adjusted_data['Day_of_Week'].apply(lambda x: 1 if x >= 5 else 0)
+
+adjusted_data['Day_of_Week'].plot(kind='hist', bins=20, title='Day_of_Week')
+plt.grid(color='gray', linestyle='--', linewidth=0.5)
+
+plt.xticks(ticks=np.arange(0, 7), labels=np.arange(1, 8), color='white')  # Set ticks to be at the center of the bars
+
+plt.gca().spines[['top', 'right',]].set_visible(False)
+
+adjusted_data.head()
+
+
+
+
+
+# ADF Test
+adf_test = adfuller(adjusted_data['Call_Volume'])
+
+# KPSS Test
+kpss_test = kpss(adjusted_data['Call_Volume'], regression='c')
+
+
+adf_result = {
+    "Test Statistic": adf_test[0],
+    "p-value": adf_test[1],
+    "Critical Values": adf_test[4]
+}
+
+kpss_result = {
+    "Test Statistic": kpss_test[0],
+    "p-value": kpss_test[1],
+    "Critical Values": kpss_test[3]
+}
+
+
+
+adf_result, kpss_result
+
+first_diff = adjusted_data.diff()[1:]
+plt.figure(figsize=(10,4))
+plt.plot(first_diff)
+plt.ylabel('calls', fontsize=16)
+current_date = start_date
+while current_date <= end_date:
+    plt.axvline(current_date, color='k', linestyle='--', alpha=0.2)
+    current_date += timedelta(weeks=1)
+plt.show()
+
+from statsmodels.tsa.stattools import adfuller, kpss
+
+# ADF Test
+adf_test = adfuller(first_diff['Call_Volume'])
+
+# KPSS Test
+kpss_test = kpss(first_diff['Call_Volume'], regression='c')
+
+adf_result = {
+    "Test Statistic": adf_test[0],
+    "p-value": adf_test[1],
+    "Critical Values": adf_test[4]
+}
+
+kpss_result = {
+    "Test Statistic": kpss_test[0],
+    "p-value": kpss_test[1],
+    "Critical Values": kpss_test[3]
+}
+
+
+adf_result, kpss_result
+
+
+
+
+train_end = datetime(2019, 9, 15)
+test_end = datetime(2019, 9, 30)
+train_data = first_diff[:train_end]
+test_data = first_diff[train_end + timedelta(days=1):test_end]
+
+train_data['naive_forecast'] = train_data['Call_Volume'].shift(1)
+train_data['ma_forecast'] = train_data['Call_Volume'].rolling(window=6).mean().shift(1)
+train_data_clean = train_data.dropna()
+
+last_value_index = adjusted_data.index.get_loc(train_data_clean.index[0]) - 1
+last_actual_value = adjusted_data['Call_Volume'].iloc[last_value_index]
+
+# Manually restore the original scale
+restored_series_train = [last_actual_value]
+for diff in train_data_clean['naive_forecast']:
+    restored_value = restored_series_train[-1] + diff if not pd.isna(diff) else restored_series_train[-1]
+    restored_series_train.append(restored_value)
+naive_forecast_train_restored = pd.Series(restored_series_train[1:], index=train_data_clean.index)
+
+last_value_train = restored_series_train[-1]  # Last value from train restoration
+restored_series_test = [last_value_train]  # Start with the last restored train value
+for diff in test_data['Call_Volume']:
+    restored_value = restored_series_test[-1] + diff if not pd.isna(diff) else restored_series_test[-1]
+    restored_series_test.append(restored_value)
+naive_forecast_test_restored = pd.Series(restored_series_test[1:], index=test_data.index)
+
+last_value_index = adjusted_data.index.get_loc(train_data_clean.index[0]) - 1
+last_actual_value = adjusted_data['Call_Volume'].iloc[last_value_index]
+
+# Manually restore the original scale for the train forecasts
+restored_series_train = [last_actual_value]  # Start with the last original value
+for diff in train_data_clean['ma_forecast']:
+    restored_value = restored_series_train[-1] + diff if not pd.isna(diff) else restored_series_train[-1]
+    restored_series_train.append(restored_value)
+ma_forecast_train_restored = pd.Series(restored_series_train[1:], index=train_data_clean.index)
+
+# Repeat for the testing data
+last_value_train = restored_series_train[-1]  # Last value from train restoration
+restored_series_test = [last_value_train]  # Start with the last restored train value
+for diff in test_data['Call_Volume']:
+    restored_value = restored_series_test[-1] + diff if not pd.isna(diff) else restored_series_test[-1]
+    restored_series_test.append(restored_value)
+ma_forecast_test_restored = pd.Series(restored_series_test[1:], index=test_data.index)
+
+
+
+plt.style.use('_classic_test_patch')
+
+
+mse_naive_test = mean_squared_error(adjusted_data['Call_Volume'].loc[test_data.index], naive_forecast_test_restored)
+
+plt.figure(figsize=(20, 7))
+
+# Actual and forecast data
+plt.plot(adjusted_data['Call_Volume'], label='Actual Data', color='white')  # Adjusted data plot
+plt.plot(naive_forecast_train_restored.index, naive_forecast_train_restored, label='Naive Forecast (Train)', color='blue')
+plt.plot(naive_forecast_test_restored.index, naive_forecast_test_restored, label='Naive Forecast (Test)', color='red')
+
+predictions = [naive_forecast_test_restored.iloc[-1] + x for x in np.random.normal(0, 5, 3)]
+lower_bound = [x - 10 for x in predictions]
+upper_bound = [x + 10 for x in predictions]
+
+future_dates = pd.date_range(start=naive_forecast_test_restored.index[-1], periods=4, freq='D')[1:]
+plt.plot(future_dates, predictions, color='green', label='Future Predictions')
+plt.fill_between(future_dates, lower_bound, upper_bound, color='green', alpha=0.1)
+
+plt.title('Naive Forecast - Restored Data with Predictions')
+plt.legend()
+plt.show()
+
+print("MSE for Naive Forecast on Test Data:", mse_naive_test)
+
+ma_forecast_test = mean_squared_error(adjusted_data['Call_Volume'].loc[test_data.index], ma_forecast_test_restored)
+
+# Plotting results with confidence bounds
+plt.figure(figsize=(14, 7))
+
+plt.plot(adjusted_data['Call_Volume'], label='Actual Data', color='white')  # Adjusted data plot
+plt.plot(ma_forecast_train_restored.index, ma_forecast_train_restored, label='ma forecast (Train)', color='blue')
+plt.plot(ma_forecast_test_restored.index, ma_forecast_test_restored, label='ma forecast (Test)', color='red')
+
+predictions = [ma_forecast_train_restored.iloc[-1] + x for x in np.random.normal(0, 5, 3)]
+lower_bound = [x - 10 for x in predictions]
+upper_bound = [x + 10 for x in predictions]
+
+future_dates = pd.date_range(start=ma_forecast_test_restored.index[-1], periods=4, freq='D')[1:]  # Dummy future dates
+plt.plot(future_dates, predictions, color='green', label='Future Predictions',linewidth=2)
+plt.fill_between(future_dates, lower_bound, upper_bound, color='green', alpha=0.1)
+
+plt.title('ma forecast- Restored Data with Predictions')
+plt.legend()
+plt.show()
+
+print("MSE for ma forecast on Test Data:", ma_forecast_test)
+
+
+
+
+
+train_end = datetime(2019, 9, 18)
+test_end = datetime(2019, 9, 30)
+
+train_data = first_diff[:train_end]
+test_data = first_diff[train_end + timedelta(days=1):test_end]
+
+last_value_index = adjusted_data.index.get_loc(train_data.index[-1])
+last_train_value = adjusted_data['Call_Volume'].iloc[last_value_index]
+
+ses_model = ExponentialSmoothing(train_data['Call_Volume'], trend=None, seasonal=None).fit(optimized=True)
+ses_forecast_diff = ses_model.forecast(len(test_data))
+ses_forecast_diff.index = test_data.index
+
+# Manually restore the original scale for the forecast using the last actual value from the training data
+restored_ses_forecast = [last_train_value]
+for prediction in ses_forecast_diff:
+    restored_value = restored_ses_forecast[-1] + prediction
+    restored_ses_forecast.append(restored_value)
+restored_ses_forecast = pd.Series(restored_ses_forecast[1:], index=ses_forecast_diff.index)
+
+# Calculate MSE for the test data using the forecast from SES
+mse_ses_test = mean_squared_error(adjusted_data['Call_Volume'].loc[restored_ses_forecast.index], restored_ses_forecast)
+
+plt.figure(figsize=(14, 7))
+
+plt.plot(adjusted_data.index, adjusted_data['Call_Volume'], label='Actual Data (Train + Test)', color='white')
+
+plt.plot(restored_ses_forecast.index, restored_ses_forecast, label='SES Forecast (Test)', color='red', linestyle='--', linewidth=5)
+
+plt.title('Single Exponential Smoothing Forecast - Restored to Original Scale')
+plt.xlabel('Date')
+plt.ylabel('Call Volume')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+print("MSE for SES Forecast on Test Data:", mse_ses_test)
+
+
+
+train_end = datetime(2019, 8, 20)
+test_end = datetime(2019, 9, 30)
+train_data = adjusted_data[:train_end]
+test_data = adjusted_data[train_end + timedelta(days=1):test_end]
+seasonal_periods=7
+decomposition = seasonal_decompose(train_data['Call_Volume'], model='multiplicative', period=seasonal_periods)
+train_data_deseasonalized = train_data['Call_Volume'] / decomposition.seasonal
+
+holt_model = Holt(train_data_deseasonalized).fit(smoothing_level=0.1, smoothing_slope=0.6,optimized=False)
+
+holt_forecast_deseasonalized = holt_model.forecast(len(test_data))
+
+last_seasonals = decomposition.seasonal[-seasonal_periods:]
+seasonal_repeats = len(test_data) // seasonal_periods + 1
+forecast_seasonal = np.tile(last_seasonals, seasonal_repeats)[:len(test_data)]
+holt_forecast_reseasonalized = holt_forecast_deseasonalized * forecast_seasonal
+
+holt_forecast_reseasonalized.index = test_data.index
+
+mse_holt_test = mean_squared_error(test_data['Call_Volume'], holt_forecast_reseasonalized)
+
+plt.figure(figsize=(14, 7))
+plt.plot(adjusted_data['Call_Volume'], label='Actual Data', color='white')
+plt.plot(holt_forecast_reseasonalized, label="Holt's Linear Trend Forecast (Test)", color='orange')
+
+plt.title("Holt's Linear Trend Forecast")
+plt.legend()
+plt.show()
+
+print("MSE for Holt's Linear Trend Forecast on Test Data:", mse_holt_test)
+holt_linear_aic = holt_model.aic
+holt_linear_bic = holt_model.bic
+print(f"Holt Linear Model AIC: {holt_linear_aic}")
+print(f"Holt Linear Model BIC: {holt_linear_bic}")
+
+
+
+
+
+
+train_end = datetime(2019, 8, 20)
+test_end = datetime(2019, 9, 30)
+train_data = adjusted_data[:train_end]
+test_data = adjusted_data[train_end + timedelta(days=1):test_end]
+
+holt_winters_model = ExponentialSmoothing(
+    train_data['Call_Volume'],
+    seasonal_periods=7,
+    trend='mul',
+    seasonal='add',
+    damped_trend=True
+).fit()
+
+holt_winters_forecast = holt_winters_model.forecast(len(test_data))
+holt_winters_forecast.index = test_data.index
+
+mse_holt_winters = mean_squared_error(test_data['Call_Volume'], holt_winters_forecast)
+plt.figure(figsize=(14, 7))
+plt.plot(adjusted_data['Call_Volume'], label='Actual Data', color='white')
+plt.plot(holt_winters_forecast, label='Holt-Winters Forecast (Test)', color='orange')
+
+
+plt.title('Holt-Winters Forecast')
+plt.legend()
+plt.show()
+
+print("MSE for Holt-Winters Forecast on",mse_holt_winters)
+holt_winters_aic = holt_winters_model.aic
+holt_winters_bic = holt_winters_model.bic
+
+print(f"Holt-Winters Model AIC: {holt_winters_aic}")
+print(f"Holt-Winters Model BIC: {holt_winters_bic}")
+
+
+
+
+train_start = datetime(2019, 1, 1)
+train_end = datetime(2019, 8, 1)
+test_end = datetime(2019, 9, 30)
+
+train_data = adjusted_data[:train_end]
+test_data = adjusted_data[train_end + timedelta(days=1):test_end]
+
+rolling_predictions = pd.Series(dtype=float)
+current_train_data = train_data.copy()
+
+test_dates = pd.date_range(start=train_end + timedelta(days=1), end=test_end, freq='10D')  # Create test dates every 14 days
+
+for test_date in test_dates:
+    forecast_end_date = min(test_date + timedelta(days=9), test_data.index[-1])
+
+    holt_winters_model = ExponentialSmoothing(
+        current_train_data['Call_Volume'],
+        seasonal_periods=7,  # Assuming weekly seasonality remains
+        trend='mul',
+        seasonal='add',
+        damped_trend=True
+    ).fit()
+
+    # Forecast the next 14 days
+    next_forecast = holt_winters_model.forecast((forecast_end_date - test_date).days + 1)
+    next_forecast.index = pd.date_range(start=test_date, end=forecast_end_date, freq='D')
+    rolling_predictions = pd.concat([rolling_predictions, pd.Series(next_forecast, index=next_forecast.index)])
+    current_train_data = adjusted_data[:forecast_end_date]
+
+mse_holt_winters = mean_squared_error(test_data['Call_Volume'], rolling_predictions.loc[test_data.index])
+
+# Plot results
+plt.figure(figsize=(14, 7))
+plt.plot(adjusted_data['Call_Volume'], label='Actual Data', color='white')
+plt.plot(rolling_predictions, label='Holt-Winters 14-Day Rolling Forecast', color='orange', linestyle='-')
+
+plt.title('Holt-Winters 14-Day Rolling Window Forecast')
+plt.legend()
+plt.show()
+
+print(f"MSE for Holt-Winters 14-Day Rolling Window Forecast: {mse_holt_winters}")
+
+holt_winters_aic = holt_winters_model.aic
+holt_winters_bic = holt_winters_model.bic
+
+print(f"Holt-Winters Model AIC: {holt_winters_aic}")
+print(f"Holt-Winters Model BIC: {holt_winters_bic}")
+
+
+
+
+first_diff = first_diff.dropna()  # Dropping NaN values if they exist
+
+if 'Call_Volume' in first_diff.columns:
+    acf_vals = acf(first_diff['Call_Volume'])
+else:
+    print("Column 'Call_Volume' not found in DataFrame")
+
+
+num_lags = 20
+fig, ax = plt.subplots(figsize=(10, 5))
+plot_acf(first_diff['Call_Volume'], ax=ax, lags=num_lags, alpha=0.05)  # 95% confidence interval
+
+plt.title('Autocorrelation Function (ACF) with Confidence Bounds')
+plt.xlabel('Lag')
+plt.ylabel('ACF')
+plt.show()
+
+
+first_diff = first_diff.dropna()  # Dropping NaN values if they exist
+if 'Call_Volume' in first_diff.columns:
+    pacf_vals = pacf(first_diff['Call_Volume'])
+else:
+    print("Column 'Call_Volume' not found in DataFrame")
+num_lags = 20
+fig, ax = plt.subplots(figsize=(10, 5))
+plot_pacf(first_diff['Call_Volume'], ax=ax, lags=num_lags, alpha=0.05)  # 95% confidence interval
+
+plt.title('Partial Autocorrelation Function (PACF) with Confidence Bounds')
+plt.xlabel('Lag')
+plt.ylabel('PACF')
+plt.show()
+
+
+
+
+train_start = datetime(2019, 3, 1)
+train_end = datetime(2019, 9, 1)
+test_end = datetime(2019, 9, 30)
+train_data = first_diff[:train_end]
+test_data = first_diff[train_end + timedelta(days=1):test_end]
+
+model = ARIMA(train_data['Call_Volume'], order=(6,0,7))  # No differencing in model since data is already differenced
+model_fit = model.fit()
+predictions_diff = model_fit.predict(start=test_data.index[0], end=test_data.index[-1])
+last_value_index = adjusted_data.index.get_loc(train_data.index[-1])
+last_train_value = adjusted_data['Call_Volume'].iloc[last_value_index]
+
+restored_arima_forecast = [last_train_value]
+for prediction in predictions_diff:
+    restored_value = restored_arima_forecast[-1] + prediction
+    restored_arima_forecast.append(restored_value)
+restored_arima_forecast = pd.Series(restored_arima_forecast[1:], index=predictions_diff.index)
+
+mse_arima_test = mean_squared_error(adjusted_data['Call_Volume'].loc[restored_arima_forecast.index], restored_arima_forecast)
+
+plt.figure(figsize=(14, 7))
+plt.plot(adjusted_data['Call_Volume'], label='Actual Data', color='white')  # Plotting the full original dataset
+plt.plot(restored_arima_forecast, label='ARIMA Forecast (Restored)', color='blue')
+
+plt.title('ARIMA Model Forecast Restored to Original Scale')
+plt.legend()
+plt.show()
+
+print("MSE for ARIMA Forecast on Test Data:", mse_arima_test)
+print("AIC:", model_fit.aic)
+print("BIC:", model_fit.bic)
+
+
+
+train_start = datetime(2019, 3, 1)
+train_end = datetime(2019, 8, 1)
+test_end = datetime(2019, 9, 30)
+
+rolling_predictions = pd.Series()
+
+current_train_end = train_end
+current_train_data = first_diff[:current_train_end]  # First part of the data for initial training
+
+test_dates = pd.date_range(start=train_end + timedelta(days=1), end=test_end, freq='10D')
+
+for test_date in test_dates:
+    forecast_end_date = min(test_date + timedelta(days=9), test_data.index[-1])
+
+    model = ARIMA(current_train_data['Call_Volume'], order=(6, 0, 7))
+    model_fit = model.fit()
+
+    forecast = model_fit.predict(start=test_date, end=forecast_end_date)
+
+    last_known_value = adjusted_data['Call_Volume'].loc[current_train_data.index[-1]]
+    restored_forecast = [last_known_value]
+    for prediction in forecast:
+        restored_value = restored_forecast[-1] + prediction
+        restored_forecast.append(restored_value)
+    restored_forecast = pd.Series(restored_forecast[1:], index=forecast.index)
+
+    rolling_predictions = pd.concat([rolling_predictions, restored_forecast])
+
+    current_train_data = first_diff[:forecast_end_date]
+
+mse_rolling_arima = mean_squared_error(adjusted_data['Call_Volume'].loc[rolling_predictions.index], rolling_predictions)
+
+plt.figure(figsize=(14, 7))
+plt.plot(adjusted_data['Call_Volume'], label='Actual Data', color='white')
+plt.plot(rolling_predictions, label='ARIMA Rolling Forecast (Restored)', color='red')
+plt.title('ARIMA Rolling Forecast vs Actual Data')
+plt.legend()
+plt.show()
+
+print("MSE for ARIMA Rolling Forecast on Test Data:", mse_rolling_arima)
+print("AIC:", model_fit.aic)
+print("BIC:", model_fit.bic)
+
+
+
+
+
+
+train_start = datetime(2019, 1, 1)
+train_end = datetime(2019, 9, 1)
+test_end = datetime(2019, 9, 30)
+first_diff_ar = adjusted_data['Call_Volume']
+train_data = first_diff_ar[:train_end]
+test_data = first_diff_ar[train_end + timedelta(days=1):test_end]
+
+model = SARIMAX(train_data,
+                order=( 6, 0, 2),  # Reduced non-seasonal lags
+                seasonal_order=(2, 1, 5, 7),  # Reduced seasonal lags
+                enforce_stationarity=False,
+                enforce_invertibility=False)
+model_fit = model.fit(disp=0)
+print(model_fit.summary())
+predictions = model_fit.get_forecast(steps=len(test_data))
+predicted_mean = predictions.predicted_mean
+
+mse = mean_squared_error(test_data, predicted_mean)
+print(f'Mean Squared Error of the predictions: {mse}')
+
+
+plt.figure(figsize=(10, 6))
+plt.plot(test_data.index, test_data, label='Actual')
+plt.plot(test_data.index, predicted_mean, color='red', label='Forecast')
+plt.fill_between(test_data.index,
+                 predictions.conf_int().iloc[:, 0],
+                 predictions.conf_int().iloc[:, 1], color='pink')
+plt.title('Forecast vs Actuals')
+plt.legend()
+plt.show()
+
+daily_data
+
+
+train_start = datetime(2019, 3, 1)
+train_end = datetime(2019, 8, 1)
+test_end = datetime(2019, 9, 30)
+
+rolling_predictions = pd.Series()
+
+current_train_end = train_end
+current_train_data = adjusted_data[:current_train_end]  # First part of the data for initial training
+
+test_dates = pd.date_range(start=train_end + timedelta(days=1), end=test_end, freq='10D')
+
+for test_date in test_dates:
+    forecast_end_date = min(test_date + timedelta(days=9), test_data.index[-1])
+
+    model = SARIMAX(train_data,
+                order=( 6, 0, 2),  # Reduced non-seasonal lags
+                seasonal_order=(2, 1, 5, 7),  # Reduced seasonal lags
+                enforce_stationarity=False,
+                enforce_invertibility=False)
+    model_fit = model.fit()
+
+    forecast = model_fit.predict(start=test_date, end=forecast_end_date)
+
+    rolling_predictions = pd.concat([rolling_predictions, forecast])
+
+    current_train_data = first_diff[:forecast_end_date]
+
+mse_rolling_sarima = mean_squared_error(adjusted_data['Call_Volume'].loc[rolling_predictions.index], rolling_predictions)
+
+plt.figure(figsize=(14, 7))
+plt.plot(adjusted_data['Call_Volume'], label='Actual Data', color='white')
+plt.plot(rolling_predictions, label='SARIMA Rolling Forecast (Restored)', color='red')
+plt.title('SARIMA Rolling Forecast vs Actual Data')
+plt.legend()
+plt.show()
+
+print("MSE for SARIMA Rolling Forecast on Test Data:", mse_rolling_sarima)
+print("AIC:", model_fit.aic)
+print("BIC:", model_fit.bic)
+
+
+
+dates = pd.date_range(start='2019-03-01', end='2019-09-30')
+adjusted_data_ln = adjusted_data.copy()
+adjusted_data_ln['Time_Index'] = np.arange(len(adjusted_data_ln))
+
+train_data_ln = adjusted_data_ln[:'2019-08-01']
+test_data_ln = adjusted_data_ln['2019-08-01':]
+
+model = LinearRegression()
+X_train_ln = train_data_ln['Time_Index'].values.reshape(-1, 1)
+y_train_ln = train_data_ln['Call_Volume'].values
+X_test_ln = test_data_ln['Time_Index'].values.reshape(-1, 1)
+y_test_ln = test_data_ln['Call_Volume'].values
+model.fit(X_train_ln, y_train_ln)
+
+train_predictions = model.predict(X_train_ln)
+test_predictions = model.predict(X_test_ln)
+
+train_mse = mean_squared_error(y_train_ln, train_predictions)
+test_mse = mean_squared_error(y_test_ln, test_predictions)
+
+plt.figure(figsize=(14, 7))
+plt.plot(adjusted_data_ln['Call_Volume'], label='Actual Data', color='blue')
+plt.plot(train_data_ln.index, train_predictions, label='Train Predictions', color='red', linestyle='-',linewidth=5)
+plt.plot(test_data_ln.index, test_predictions, label='Test Predictions', color='orange', linestyle='--',linewidth=5)
+plt.title('Linear Regression Forecast vs Actual Data')
+plt.xlabel('Date')
+plt.ylabel('Call Volume')
+plt.legend()
+plt.show()
+
+print(f'Train MSE: {train_mse}')
+print(f'Test MSE: {test_mse}')
+
+
+
+train_start = datetime(2019, 3, 1)
+train_end = datetime(2019, 9, 30)  # Adjusted to include all available data
+
+current_train_data = adjusted_data[:train_end]
+
+
+forecast_start_date = train_end + timedelta(days=1)
+forecast_end_date = forecast_start_date + timedelta(days=60)  # Forecasting 2 months ahead
+
+rolling_predictions = pd.Series(dtype=float, index=pd.date_range(start=forecast_start_date, end=forecast_end_date, freq='D'))
+
+while forecast_start_date <= forecast_end_date:
+    forecast_period_end = min(forecast_start_date + timedelta(days=9), forecast_end_date)
+
+    model = SARIMAX(current_train_data['Call_Volume'],
+                    order=(6, 0, 2),
+                    seasonal_order=(2, 1, 5, 7),
+                    enforce_stationarity=False,
+                    enforce_invertibility=False)
+    model_fit = model.fit(disp=0)
+
+    forecast = model_fit.get_forecast(steps=(forecast_period_end - forecast_start_date).days + 1)
+    forecast_mean = forecast.predicted_mean
+
+    rolling_predictions[forecast_start_date:forecast_period_end] = forecast_mean
+
+    additional_data = pd.Series(forecast_mean, index=pd.date_range(start=forecast_start_date, end=forecast_period_end, freq='10D'))
+    current_train_data = pd.concat([current_train_data, additional_data])
+
+    forecast_start_date = forecast_period_end + timedelta(days=1)
+
+plt.figure(figsize=(14, 7))
+plt.plot(current_train_data.index, current_train_data, color='blue')
+plt.plot(rolling_predictions.index, rolling_predictions, label='Forecasted Call Volume', color='red')
+plt.title('Next Two Months Daily Call Volume Forecast')
+plt.xlabel('Date')
+plt.ylabel('Call Volume')
+plt.legend()
+plt.show()
+
+rolling_predictions.to_csv('forecasted_call_volume.csv', header=True,sep=',')
+
+
+rolling_predictions
+
+
+forecasted_data = rolling_predictions.reset_index()
+forecasted_data.columns = ['Date', 'Call_volume']
+
+
+forecasted_data.head(), forecasted_data.describe(), forecasted_data.info()
+
+
+forecasted_data['Call_volume'] = pd.to_datetime(forecasted_data['Call_volume'])
+
+sns.set(style="whitegrid")
+
+fig, axes = plt.subplots(3, 1, figsize=(10, 15))
+
+# Time Series Plot
+sns.lineplot(data=forecasted_data, x='Date', y='Call_volume', ax=axes[0], marker='o', color='dodgerblue')
+axes[0].set_title('Forecasted Call Volume Over Time')
+axes[0].set_xlabel('Date')
+axes[0].set_ylabel('Call Volume')
+
+# Histogram
+sns.histplot(forecasted_data['Call_volume'], bins=15, kde=True, color='purple', ax=axes[1])
+axes[1].set_title('Distribution of Call Volumes')
+axes[1].set_xlabel('Call Volume')
+axes[1].set_ylabel('Frequency')
+
+# Box Plot
+sns.boxplot(data=forecasted_data, x='Call_volume', color='green', ax=axes[2])
+axes[2].set_title('Box Plot of Call Volumes')
+axes[2].set_xlabel('Call Volume')
+
+plt.tight_layout()
+plt.show()
